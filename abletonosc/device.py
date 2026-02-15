@@ -41,7 +41,7 @@ class DeviceHandler(AbletonOSCHandler):
             self.osc_server.add_handler("/live/device/start_listen/%s" % prop,
                                         create_device_callback(self._start_listen, prop))
             self.osc_server.add_handler("/live/device/stop_listen/%s" % prop,
-                                        create_device_callback(self._stop_listen, prop))
+                                        create_device_callback(self._stop_listen_compat, prop))
         for prop in properties_rw:
             self.osc_server.add_handler("/live/device/set/%s" % prop,
                                         create_device_callback(self._set_property, prop))
@@ -95,35 +95,23 @@ class DeviceHandler(AbletonOSCHandler):
             return param_index, device.parameters[param_index].str_for_value(device.parameters[param_index].value)
         
         def device_get_parameter_value_listener(device, params: Tuple[Any] = ()):
+            param_idx = int(params[2])
 
-            def property_changed_callback():
-                value = device.parameters[params[2]].value
+            def on_change(broadcast):
+                value = device.parameters[param_idx].value
                 self.logger.info("Property %s changed of %s %s: %s" % ('value', 'device parameter', str(params), value))
-                self.osc_server.send("/live/device/get/parameter/value", (*params, value,))
+                broadcast("/live/device/get/parameter/value", (*params, value,))
 
-                value_string = device.parameters[params[2]].str_for_value(device.parameters[params[2]].value)
+                value_string = device.parameters[param_idx].str_for_value(device.parameters[param_idx].value)
                 self.logger.info("Property %s changed of %s %s: %s" % ('value_string', 'device parameter', str(params), value_string))
-                self.osc_server.send("/live/device/get/parameter/value_string", (*params, value_string,))
+                broadcast("/live/device/get/parameter/value_string", (*params, value_string,))
 
-            listener_key = ('device_parameter_value', tuple(params))
-            if listener_key in self.listener_functions:
-               device_get_parameter_remove_value_listener(device, params)
-
-            self.logger.info("Adding listener for %s %s, property: %s" % ('device parameter', str(params), 'value'))
-            device.parameters[params[2]].add_value_listener(property_changed_callback)
-            self.listener_functions[listener_key] = property_changed_callback
-
-            property_changed_callback()
+            self._start_listen(target=device.parameters[param_idx],
+                               prop='device_parameter_value', params=params,
+                               on_change=on_change, listener_name="value")
 
         def device_get_parameter_remove_value_listener(device, params: Tuple[Any] = ()):
-            listener_key = ('device_parameter_value', tuple(params))
-            if listener_key in self.listener_functions:
-                self.logger.info("Removing listener for %s %s, property %s" % (self.class_identifier, str(params), 'value'))
-                listener_function = self.listener_functions[listener_key]
-                device.parameters[params[2]].remove_value_listener(listener_function)
-                del self.listener_functions[listener_key]
-            else:
-                self.logger.warning("No listener function found for property: %s (%s)" % (prop, str(params)))
+            self._stop_listen('device_parameter_value', params)
 
         def device_set_parameter_value(device, params: Tuple[Any] = ()):
             param_index, param_value = params[:2]

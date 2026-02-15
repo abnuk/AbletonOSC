@@ -8,7 +8,7 @@ import pytest
 import sys
 sys.path.append(".")
 
-from ..client import AbletonOSCClient, TICK_DURATION
+from client import AbletonOSCClient, TICK_DURATION
 
 # Live tick is 100ms. Wait for this long plus a short additional buffer.
 TICK_DURATION = 0.125

@@ -69,7 +69,7 @@ class TrackHandler(AbletonOSCHandler):
             self.osc_server.add_handler("/live/track/start_listen/%s" % prop,
                                         create_track_callback(self._start_listen, prop, include_track_id=True))
             self.osc_server.add_handler("/live/track/stop_listen/%s" % prop,
-                                        create_track_callback(self._stop_listen, prop, include_track_id=True))
+                                        create_track_callback(self._stop_listen_compat, prop, include_track_id=True))
         for prop in properties_rw:
             self.osc_server.add_handler("/live/track/set/%s" % prop,
                                         create_track_callback(self._set_property, prop))
@@ -243,32 +243,9 @@ class TrackHandler(AbletonOSCHandler):
 
     def _start_mixer_listen(self, target, prop, params: Optional[Tuple] = ()) -> None:
         parameter_object = getattr(target.mixer_device, prop)
-        def property_changed_callback():
-            value = parameter_object.value
-            self.logger.info("Property %s changed of %s %s: %s" % (prop, self.class_identifier, str(params), value))
-            osc_address = "/live/%s/get/%s" % (self.class_identifier, prop)
-            self.osc_server.send(osc_address, (*params, value,))
-
-        listener_key = (prop, tuple(params))
-        if listener_key in self.listener_functions:
-            self._stop_mixer_listen(target, prop, params)
-
-        self.logger.info("Adding listener for %s %s, property: %s" % (self.class_identifier, str(params), prop))
-
-        parameter_object.add_value_listener(property_changed_callback)
-        self.listener_functions[listener_key] = property_changed_callback
-        #--------------------------------------------------------------------------------
-        # Immediately send the current value
-        #--------------------------------------------------------------------------------
-        property_changed_callback()
+        self._start_listen(target=parameter_object, prop=prop, params=params,
+                           getter=lambda: (parameter_object.value,),
+                           listener_name="value")
 
     def _stop_mixer_listen(self, target, prop, params: Optional[Tuple[Any]] = ()) -> None:
-        parameter_object = getattr(target.mixer_device, prop)
-        listener_key = (prop, tuple(params))
-        if listener_key in self.listener_functions:
-            self.logger.info("Removing listener for %s %s, property %s" % (self.class_identifier, str(params), prop))
-            listener_function = self.listener_functions[listener_key]
-            parameter_object.remove_value_listener(listener_function)
-            del self.listener_functions[listener_key]
-        else:
-            self.logger.warning("No listener function found for property: %s (%s)" % (prop, str(params)))
+        self._stop_listen(prop, params)

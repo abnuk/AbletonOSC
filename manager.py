@@ -55,7 +55,7 @@ class Manager(ControlSurface):
                 message = record.getMessage()
                 message = message[message.index(":") + 2:]
                 try:
-                    self.osc_server.send("/live/error", (message,))
+                    self.osc_server.broadcast("/live/error", (message,))
                 except OSError:
                     # If the connection is dead, silently ignore errors as there's not much more we can do
                     pass
@@ -83,11 +83,46 @@ class Manager(ControlSurface):
         def show_message_callback(params):
             self.show_message(params[0])
 
+        #--------------------------------------------------------------------------------
+        # Multi-client listener registration API
+        #--------------------------------------------------------------------------------
+        def register_listener_callback(params):
+            """
+            Register a client for multi-client listener support.
+            The client sends its response_port so the server knows where to send events.
+            Usage: /live/api/register_listener <response_port>
+            """
+            if len(params) < 1:
+                logger.warning("register_listener requires a response_port argument")
+                return
+            response_port = int(params[0])
+            sender_addr = self.osc_server._current_sender_addr
+            if sender_addr is not None:
+                self.osc_server.register_client(sender_addr, response_port)
+            return (response_port,)
+
+        def unregister_listener_callback(params):
+            """
+            Unregister a client. Removes it from all listener subscriptions.
+            Usage: /live/api/unregister_listener
+            """
+            sender_addr = self.osc_server._current_sender_addr
+            if sender_addr is not None:
+                client_addr = self.osc_server.unregister_client(sender_addr)
+                if client_addr is not None:
+                    # Remove this client from all handler listener subscriptions
+                    for handler in self.handlers:
+                        handler.remove_client_from_all_listeners(client_addr)
+                    return (1,)
+            return (0,)
+
         self.osc_server.add_handler("/live/test", test_callback)
         self.osc_server.add_handler("/live/api/reload", reload_callback)
         self.osc_server.add_handler("/live/api/get/log_level", get_log_level_callback)
         self.osc_server.add_handler("/live/api/set/log_level", set_log_level_callback)
         self.osc_server.add_handler("/live/api/show_message", show_message_callback)
+        self.osc_server.add_handler("/live/api/register_listener", register_listener_callback)
+        self.osc_server.add_handler("/live/api/unregister_listener", unregister_listener_callback)
 
         with self.component_guard():
             self.handlers = [

@@ -94,36 +94,16 @@ class ChainHandler(AbletonOSCHandler):
         def device_start_listen_chains(params: Tuple[Any] = ()):
             track_index, device_index = int(params[0]), int(params[1])
             device = self.song.tracks[track_index].devices[device_index]
-
-            def chains_changed_callback():
-                chain_names = tuple(chain.name for chain in device.chains)
-                self.logger.info("Chains changed for device %d on track %d: %s" % (device_index, track_index, chain_names))
-                self.osc_server.send("/live/device/get/chains", (track_index, device_index, *chain_names))
-
-            listener_key = ('chains', (track_index, device_index))
-            if listener_key in self.listener_functions:
-                device_stop_listen_chains(params)
-
-            self.logger.info("Adding chains listener for track %d, device %d" % (track_index, device_index))
-            device.add_chains_listener(chains_changed_callback)
-            self.listener_functions[listener_key] = chains_changed_callback
-            self.listener_objects[listener_key] = device
-
-            chains_changed_callback()
+            self._start_listen(
+                target=device, prop='chains',
+                params=(track_index, device_index),
+                getter=lambda: tuple(chain.name for chain in device.chains),
+                osc_address="/live/device/get/chains",
+                listener_name="chains")
 
         def device_stop_listen_chains(params: Tuple[Any] = ()):
             track_index, device_index = int(params[0]), int(params[1])
-            device = self.song.tracks[track_index].devices[device_index]
-
-            listener_key = ('chains', (track_index, device_index))
-            if listener_key in self.listener_functions:
-                self.logger.info("Removing chains listener for track %d, device %d" % (track_index, device_index))
-                listener_function = self.listener_functions[listener_key]
-                device.remove_chains_listener(listener_function)
-                del self.listener_functions[listener_key]
-                del self.listener_objects[listener_key]
-            else:
-                self.logger.warning("No chains listener found for track %d, device %d" % (track_index, device_index))
+            self._stop_listen('chains', (track_index, device_index))
 
         self.osc_server.add_handler("/live/device/start_listen/chains", device_start_listen_chains)
         self.osc_server.add_handler("/live/device/stop_listen/chains", device_stop_listen_chains)
@@ -135,39 +115,22 @@ class ChainHandler(AbletonOSCHandler):
             track_index, device_index = int(params[0]), int(params[1])
             device = self.song.tracks[track_index].devices[device_index]
 
-            def selected_chain_changed_callback():
+            def selected_chain_getter():
                 selected = device.view.selected_chain
                 if selected is not None:
-                    chain_index = list(device.chains).index(selected)
-                else:
-                    chain_index = -1
-                self.logger.info("Selected chain changed for device %d on track %d: %d" % (device_index, track_index, chain_index))
-                self.osc_server.send("/live/device/get/selected_chain", (track_index, device_index, chain_index))
+                    return (list(device.chains).index(selected),)
+                return (-1,)
 
-            listener_key = ('selected_chain', (track_index, device_index))
-            if listener_key in self.listener_functions:
-                device_stop_listen_selected_chain(params)
-
-            self.logger.info("Adding selected_chain listener for track %d, device %d" % (track_index, device_index))
-            device.view.add_selected_chain_listener(selected_chain_changed_callback)
-            self.listener_functions[listener_key] = selected_chain_changed_callback
-            self.listener_objects[listener_key] = device.view
-
-            selected_chain_changed_callback()
+            self._start_listen(
+                target=device.view, prop='selected_chain',
+                params=(track_index, device_index),
+                getter=selected_chain_getter,
+                osc_address="/live/device/get/selected_chain",
+                listener_name="selected_chain")
 
         def device_stop_listen_selected_chain(params: Tuple[Any] = ()):
             track_index, device_index = int(params[0]), int(params[1])
-            device = self.song.tracks[track_index].devices[device_index]
-
-            listener_key = ('selected_chain', (track_index, device_index))
-            if listener_key in self.listener_functions:
-                self.logger.info("Removing selected_chain listener for track %d, device %d" % (track_index, device_index))
-                listener_function = self.listener_functions[listener_key]
-                device.view.remove_selected_chain_listener(listener_function)
-                del self.listener_functions[listener_key]
-                del self.listener_objects[listener_key]
-            else:
-                self.logger.warning("No selected_chain listener found for track %d, device %d" % (track_index, device_index))
+            self._stop_listen('selected_chain', (track_index, device_index))
 
         self.osc_server.add_handler("/live/device/start_listen/selected_chain", device_start_listen_selected_chain)
         self.osc_server.add_handler("/live/device/stop_listen/selected_chain", device_stop_listen_selected_chain)
@@ -199,7 +162,7 @@ class ChainHandler(AbletonOSCHandler):
             self.osc_server.add_handler("/live/chain/start_listen/%s" % prop,
                                         create_chain_callback(self._start_listen, prop, include_ids=True))
             self.osc_server.add_handler("/live/chain/stop_listen/%s" % prop,
-                                        create_chain_callback(self._stop_listen, prop, include_ids=True))
+                                        create_chain_callback(self._stop_listen_compat, prop, include_ids=True))
 
         #--------------------------------------------------------------------------------
         # Chain-scoped: Mixer properties (volume, panning)
@@ -227,35 +190,16 @@ class ChainHandler(AbletonOSCHandler):
         #--------------------------------------------------------------------------------
         def chain_start_listen_mixer(chain, prop_name, params: Tuple[Any] = ()):
             parameter_object = getattr(chain.mixer_device, prop_name)
-
-            def property_changed_callback():
-                value = parameter_object.value
-                self.logger.info("Property %s changed of chain %s: %s" % (prop_name, str(params), value))
-                self.osc_server.send("/live/chain/get/%s" % prop_name, (*params, value))
-
-            listener_key = ('chain_mixer_%s' % prop_name, tuple(params))
-            if listener_key in self.listener_functions:
-                chain_stop_listen_mixer(chain, prop_name, params)
-
-            self.logger.info("Adding %s listener for chain %s" % (prop_name, str(params)))
-            parameter_object.add_value_listener(property_changed_callback)
-            self.listener_functions[listener_key] = property_changed_callback
-            self.listener_objects[listener_key] = parameter_object
-
-            property_changed_callback()
+            self._start_listen(
+                target=parameter_object,
+                prop='chain_mixer_%s' % prop_name,
+                params=params,
+                getter=lambda: (parameter_object.value,),
+                osc_address="/live/chain/get/%s" % prop_name,
+                listener_name="value")
 
         def chain_stop_listen_mixer(chain, prop_name, params: Tuple[Any] = ()):
-            parameter_object = getattr(chain.mixer_device, prop_name)
-
-            listener_key = ('chain_mixer_%s' % prop_name, tuple(params))
-            if listener_key in self.listener_functions:
-                self.logger.info("Removing %s listener for chain %s" % (prop_name, str(params)))
-                listener_function = self.listener_functions[listener_key]
-                parameter_object.remove_value_listener(listener_function)
-                del self.listener_functions[listener_key]
-                del self.listener_objects[listener_key]
-            else:
-                self.logger.warning("No %s listener found for chain %s" % (prop_name, str(params)))
+            self._stop_listen('chain_mixer_%s' % prop_name, params)
 
         for mixer_prop in ["volume", "panning"]:
             self.osc_server.add_handler("/live/chain/start_listen/%s" % mixer_prop,

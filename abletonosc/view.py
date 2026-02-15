@@ -46,5 +46,5 @@ class ViewHandler(AbletonOSCHandler):
         
         self.osc_server.add_handler('/live/view/start_listen/selected_scene', partial(self._start_listen, self.song.view, "selected_scene", getter=get_selected_scene))
         self.osc_server.add_handler('/live/view/start_listen/selected_track', partial(self._start_listen, self.song.view, "selected_track", getter=get_selected_track))
-        self.osc_server.add_handler('/live/view/stop_listen/selected_scene', partial(self._stop_listen, self.song.view, "selected_scene"))
-        self.osc_server.add_handler('/live/view/stop_listen/selected_track', partial(self._stop_listen, self.song.view, "selected_track"))
+        self.osc_server.add_handler('/live/view/stop_listen/selected_scene', partial(self._stop_listen_compat, self.song.view, "selected_scene"))
+        self.osc_server.add_handler('/live/view/stop_listen/selected_track', partial(self._stop_listen_compat, self.song.view, "selected_track"))

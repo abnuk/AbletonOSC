@@ -24,6 +24,7 @@ class AbletonOSCClient:
             port: The remote port to connect to. Defaults to 11000, the default AbletonOSC port.
             client_port: The local port to bind to. Defaults to 11001, the default AbletonOSC reply port.
         """
+        self.client_port = client_port
         dispatcher = Dispatcher()
         dispatcher.set_default_handler(self.handle_osc)
         self.server = ThreadingOSCUDPServer(("0.0.0.0", client_port), dispatcher)
@@ -45,6 +46,22 @@ class AbletonOSCClient:
         self.server.shutdown()
         self.server_thread.join()
         self.server = None
+
+    def register(self):
+        """
+        Register this client with the AbletonOSC server for multi-client listener support.
+        Sends the client's listening port so the server knows where to send listener events.
+        Required when running multiple clients on the same machine with different ports.
+        """
+        self.send_message("/live/api/register_listener", [self.client_port])
+
+    def unregister(self):
+        """
+        Unregister this client from the AbletonOSC server.
+        The server will stop sending listener events to this client and remove all
+        its listener subscriptions.
+        """
+        self.send_message("/live/api/unregister_listener")
 
     def send_bundle(self,
                     messages: list[tuple[str, tuple]]):

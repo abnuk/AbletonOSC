@@ -124,7 +124,7 @@ class ClipHandler(AbletonOSCHandler):
             self.osc_server.add_handler("/live/clip/start_listen/%s" % prop,
                                         create_clip_callback(self._start_listen, prop, pass_clip_index=True))
             self.osc_server.add_handler("/live/clip/stop_listen/%s" % prop,
-                                        create_clip_callback(self._stop_listen, prop, pass_clip_index=True))
+                                        create_clip_callback(self._stop_listen_compat, prop, pass_clip_index=True))
         for prop in properties_rw:
             self.osc_server.add_handler("/live/clip/set/%s" % prop,
                                         create_clip_callback(self._set_property, prop))

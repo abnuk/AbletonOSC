@@ -89,7 +89,7 @@ class SongHandler(AbletonOSCHandler):
         for prop in properties_r + properties_rw:
             self.osc_server.add_handler("/live/song/get/%s" % prop, partial(self._get_property, self.song, prop))
             self.osc_server.add_handler("/live/song/start_listen/%s" % prop, partial(self._start_listen, self.song, prop))
-            self.osc_server.add_handler("/live/song/stop_listen/%s" % prop, partial(self._stop_listen, self.song, prop))
+            self.osc_server.add_handler("/live/song/stop_listen/%s" % prop, partial(self._stop_listen_compat, self.song, prop))
         for prop in properties_rw:
             self.osc_server.add_handler("/live/song/set/%s" % prop, partial(self._set_property, self.song, prop))
 
@@ -267,34 +267,20 @@ class SongHandler(AbletonOSCHandler):
         # Listener for /live/song/get/beat
         #--------------------------------------------------------------------------------
         self.last_song_time = -1.0
-        
-        def stop_beat_listener(params: Tuple[Any] = ()):
-            try:
-                self.song.remove_current_song_time_listener(self.current_song_time_changed)
-                self.logger.info("Removing beat listener")
-            except:
-                pass
+
+        def beat_on_change(broadcast):
+            if (self.song.current_song_time < self.last_song_time) or \
+                    (int(self.song.current_song_time) > int(self.last_song_time)):
+                broadcast("/live/song/get/beat", (int(self.song.current_song_time),))
+            self.last_song_time = self.song.current_song_time
 
         def start_beat_listener(params: Tuple[Any] = ()):
-            stop_beat_listener()
-            self.logger.info("Adding beat listener")
-            self.song.add_current_song_time_listener(self.current_song_time_changed)
+            self._start_listen(target=self.song, prop='beat', params=(),
+                               on_change=beat_on_change,
+                               listener_name="current_song_time")
+
+        def stop_beat_listener(params: Tuple[Any] = ()):
+            self._stop_listen('beat', ())
 
         self.osc_server.add_handler("/live/song/start_listen/beat", start_beat_listener)
         self.osc_server.add_handler("/live/song/stop_listen/beat", stop_beat_listener)
-
-    def current_song_time_changed(self):
-        #--------------------------------------------------------------------------------
-        # If song has rewound or skipped to next beat, sent a /live/beat message
-        #--------------------------------------------------------------------------------
-        if (self.song.current_song_time < self.last_song_time) or \
-                (int(self.song.current_song_time) > int(self.last_song_time)):
-            self.osc_server.send("/live/song/get/beat", (int(self.song.current_song_time),))
-        self.last_song_time = self.song.current_song_time
-
-    def clear_api(self):
-        super().clear_api()
-        try:
-            self.song.remove_current_song_time_listener(self.current_song_time_changed)
-        except:
-            pass

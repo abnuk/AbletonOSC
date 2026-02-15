@@ -52,7 +52,7 @@ class SceneHandler(AbletonOSCHandler):
             self.osc_server.add_handler("/live/scene/start_listen/%s" % prop,
                                         create_scene_callback(self._start_listen, prop, include_ids=True))
             self.osc_server.add_handler("/live/scene/stop_listen/%s" % prop,
-                                        create_scene_callback(self._stop_listen, prop, include_ids=True))
+                                        create_scene_callback(self._stop_listen_compat, prop, include_ids=True))
         for prop in properties_rw:
             self.osc_server.add_handler("/live/scene/set/%s" % prop,
                                         create_scene_callback(self._set_property, prop))
