@@ -507,6 +507,80 @@ For devices:
 
 ---
 
+## Chain API
+
+Represents chains within rack devices (Instrument Rack, Audio Effect Rack, MIDI Effect Rack). Devices that support chains have `can_have_chains = True` (queryable via `/live/track/get/devices/can_have_chains`).
+
+<details>
+<summary><b>Documentation</b>: Chain API</summary>
+
+### Device-scoped chain queries
+
+Query all chains of a rack device at once. The device must support chains (`can_have_chains = True`).
+
+| Address                              | Query params        | Response params                         | Description                                      |
+|:-------------------------------------|:--------------------|:----------------------------------------|:-------------------------------------------------|
+| /live/device/get/num_chains          | track_id, device_id | track_id, device_id, num_chains         | Get the number of chains in the rack             |
+| /live/device/get/chains/name         | track_id, device_id | track_id, device_id, [name, ...]        | Get all chain names                              |
+| /live/device/get/chains/color        | track_id, device_id | track_id, device_id, [color, ...]       | Get all chain colors                             |
+| /live/device/get/chains/color_index  | track_id, device_id | track_id, device_id, [color_index, ...] | Get all chain color indices                      |
+| /live/device/get/chains/mute         | track_id, device_id | track_id, device_id, [mute, ...]        | Get mute state for all chains                    |
+| /live/device/get/chains/solo         | track_id, device_id | track_id, device_id, [solo, ...]        | Get solo state for all chains                    |
+| /live/device/get/selected_chain      | track_id, device_id | track_id, device_id, chain_index        | Get the index of the currently selected chain    |
+| /live/device/set/selected_chain      | track_id, device_id, chain_index |                              | Set the selected chain by index                  |
+
+### Individual chain properties
+
+| Address                  | Query params                        | Response params                               | Description                         |
+|:-------------------------|:------------------------------------|:----------------------------------------------|:------------------------------------|
+| /live/chain/get/name     | track_id, device_id, chain_id       | track_id, device_id, chain_id, name           | Get chain name                      |
+| /live/chain/set/name     | track_id, device_id, chain_id, name |                                               | Set chain name                      |
+| /live/chain/get/color    | track_id, device_id, chain_id       | track_id, device_id, chain_id, color          | Get chain color                     |
+| /live/chain/get/color_index | track_id, device_id, chain_id    | track_id, device_id, chain_id, color_index    | Get chain color index               |
+| /live/chain/get/mute     | track_id, device_id, chain_id       | track_id, device_id, chain_id, mute           | Get chain mute state                |
+| /live/chain/set/mute     | track_id, device_id, chain_id, mute |                                               | Set chain mute state (0/1)          |
+| /live/chain/get/solo     | track_id, device_id, chain_id       | track_id, device_id, chain_id, solo           | Get chain solo state                |
+| /live/chain/set/solo     | track_id, device_id, chain_id, solo |                                               | Set chain solo state (0/1)          |
+| /live/chain/get/volume   | track_id, device_id, chain_id       | track_id, device_id, chain_id, volume         | Get chain mixer volume              |
+| /live/chain/set/volume   | track_id, device_id, chain_id, volume |                                             | Set chain mixer volume              |
+| /live/chain/get/panning  | track_id, device_id, chain_id       | track_id, device_id, chain_id, panning        | Get chain mixer panning             |
+| /live/chain/set/panning  | track_id, device_id, chain_id, panning |                                            | Set chain mixer panning             |
+
+### Chain devices
+
+Access devices contained within a chain.
+
+| Address                          | Query params                  | Response params                                | Description                          |
+|:---------------------------------|:------------------------------|:-----------------------------------------------|:-------------------------------------|
+| /live/chain/get/num_devices      | track_id, device_id, chain_id | track_id, device_id, chain_id, num_devices     | Get the number of devices in a chain |
+| /live/chain/get/devices/name     | track_id, device_id, chain_id | track_id, device_id, chain_id, [name, ...]     | Get device names within a chain      |
+| /live/chain/get/devices/type     | track_id, device_id, chain_id | track_id, device_id, chain_id, [type, ...]     | Get device types within a chain      |
+| /live/chain/get/devices/class_name | track_id, device_id, chain_id | track_id, device_id, chain_id, [class_name, ...] | Get device class names within a chain |
+
+### Chain listeners
+
+| Address                                    | Query params                  | Response address                    | Response params                           | Description                                      |
+|:-------------------------------------------|:------------------------------|:------------------------------------|:------------------------------------------|:-------------------------------------------------|
+| /live/device/start_listen/chains           | track_id, device_id           | /live/device/get/chains             | track_id, device_id, [name, ...]          | Listen for chain list changes (add/remove)       |
+| /live/device/stop_listen/chains            | track_id, device_id           |                                     |                                           | Stop listening for chain list changes             |
+| /live/device/start_listen/selected_chain   | track_id, device_id           | /live/device/get/selected_chain     | track_id, device_id, chain_index          | Listen for selected chain changes                |
+| /live/device/stop_listen/selected_chain    | track_id, device_id           |                                     |                                           | Stop listening for selected chain changes         |
+| /live/chain/start_listen/mute              | track_id, device_id, chain_id | /live/chain/get/mute                | track_id, device_id, chain_id, mute       | Listen for chain mute changes                    |
+| /live/chain/stop_listen/mute               | track_id, device_id, chain_id |                                     |                                           | Stop listening for chain mute changes             |
+| /live/chain/start_listen/solo              | track_id, device_id, chain_id | /live/chain/get/solo                | track_id, device_id, chain_id, solo       | Listen for chain solo changes                    |
+| /live/chain/stop_listen/solo               | track_id, device_id, chain_id |                                     |                                           | Stop listening for chain solo changes             |
+| /live/chain/start_listen/name              | track_id, device_id, chain_id | /live/chain/get/name                | track_id, device_id, chain_id, name       | Listen for chain name changes                    |
+| /live/chain/stop_listen/name               | track_id, device_id, chain_id |                                     |                                           | Stop listening for chain name changes             |
+| /live/chain/start_listen/volume            | track_id, device_id, chain_id | /live/chain/get/volume              | track_id, device_id, chain_id, volume     | Listen for chain volume changes                  |
+| /live/chain/stop_listen/volume             | track_id, device_id, chain_id |                                     |                                           | Stop listening for chain volume changes           |
+| /live/chain/start_listen/panning           | track_id, device_id, chain_id | /live/chain/get/panning             | track_id, device_id, chain_id, panning    | Listen for chain panning changes                 |
+| /live/chain/stop_listen/panning            | track_id, device_id, chain_id |                                     |                                           | Stop listening for chain panning changes          |
+
+</details>
+
+
+---
+
 ## MidiMap API
 
 Can be used to create assignments between MIDI CC and Live parameters.

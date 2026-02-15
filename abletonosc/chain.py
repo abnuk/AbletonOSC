@@ -1,0 +1,284 @@
+from typing import Tuple, Any, Optional
+from .handler import AbletonOSCHandler
+
+
+class ChainHandler(AbletonOSCHandler):
+    def __init__(self, manager):
+        super().__init__(manager)
+        self.class_identifier = "chain"
+
+    def init_api(self):
+        #--------------------------------------------------------------------------------
+        # Callback wrappers
+        #--------------------------------------------------------------------------------
+        def create_device_callback(func, *args):
+            """
+            Wrapper for device-scoped chain operations (bulk queries, selected_chain).
+            Extracts (track_index, device_index) and resolves the rack device.
+            """
+            def device_callback(params: Tuple[Any]):
+                track_index, device_index = int(params[0]), int(params[1])
+                device = self.song.tracks[track_index].devices[device_index]
+                rv = func(device, *args, params[2:])
+                if rv is not None:
+                    return (track_index, device_index, *rv)
+
+            return device_callback
+
+        def create_chain_callback(func, *args, include_ids: bool = False):
+            """
+            Wrapper for chain-scoped operations.
+            Extracts (track_index, device_index, chain_index) and resolves the chain.
+            """
+            def chain_callback(params: Tuple[Any]):
+                track_index, device_index, chain_index = int(params[0]), int(params[1]), int(params[2])
+                device = self.song.tracks[track_index].devices[device_index]
+                chain = device.chains[chain_index]
+                if include_ids:
+                    rv = func(chain, *args, params[0:])
+                else:
+                    rv = func(chain, *args, params[3:])
+
+                if rv is not None:
+                    return (track_index, device_index, chain_index, *rv)
+
+            return chain_callback
+
+        #--------------------------------------------------------------------------------
+        # Device-scoped: Bulk chain queries
+        #--------------------------------------------------------------------------------
+        def device_get_num_chains(device, params: Tuple[Any] = ()):
+            return (len(device.chains),)
+
+        def device_get_chains_name(device, params: Tuple[Any] = ()):
+            return tuple(chain.name for chain in device.chains)
+
+        def device_get_chains_color(device, params: Tuple[Any] = ()):
+            return tuple(chain.color for chain in device.chains)
+
+        def device_get_chains_color_index(device, params: Tuple[Any] = ()):
+            return tuple(chain.color_index for chain in device.chains)
+
+        def device_get_chains_mute(device, params: Tuple[Any] = ()):
+            return tuple(chain.mute for chain in device.chains)
+
+        def device_get_chains_solo(device, params: Tuple[Any] = ()):
+            return tuple(chain.solo for chain in device.chains)
+
+        self.osc_server.add_handler("/live/device/get/num_chains", create_device_callback(device_get_num_chains))
+        self.osc_server.add_handler("/live/device/get/chains/name", create_device_callback(device_get_chains_name))
+        self.osc_server.add_handler("/live/device/get/chains/color", create_device_callback(device_get_chains_color))
+        self.osc_server.add_handler("/live/device/get/chains/color_index", create_device_callback(device_get_chains_color_index))
+        self.osc_server.add_handler("/live/device/get/chains/mute", create_device_callback(device_get_chains_mute))
+        self.osc_server.add_handler("/live/device/get/chains/solo", create_device_callback(device_get_chains_solo))
+
+        #--------------------------------------------------------------------------------
+        # Device-scoped: Selected chain (via device.view)
+        #--------------------------------------------------------------------------------
+        def device_get_selected_chain(device, params: Tuple[Any] = ()):
+            selected = device.view.selected_chain
+            if selected is not None:
+                return (list(device.chains).index(selected),)
+            return (None,)
+
+        def device_set_selected_chain(device, params: Tuple[Any] = ()):
+            chain_index = int(params[0])
+            device.view.selected_chain = device.chains[chain_index]
+
+        self.osc_server.add_handler("/live/device/get/selected_chain", create_device_callback(device_get_selected_chain))
+        self.osc_server.add_handler("/live/device/set/selected_chain", create_device_callback(device_set_selected_chain))
+
+        #--------------------------------------------------------------------------------
+        # Device-scoped: Chain list listener (fires when chains are added/removed)
+        #--------------------------------------------------------------------------------
+        def device_start_listen_chains(params: Tuple[Any] = ()):
+            track_index, device_index = int(params[0]), int(params[1])
+            device = self.song.tracks[track_index].devices[device_index]
+
+            def chains_changed_callback():
+                chain_names = tuple(chain.name for chain in device.chains)
+                self.logger.info("Chains changed for device %d on track %d: %s" % (device_index, track_index, chain_names))
+                self.osc_server.send("/live/device/get/chains", (track_index, device_index, *chain_names))
+
+            listener_key = ('chains', (track_index, device_index))
+            if listener_key in self.listener_functions:
+                device_stop_listen_chains(params)
+
+            self.logger.info("Adding chains listener for track %d, device %d" % (track_index, device_index))
+            device.add_chains_listener(chains_changed_callback)
+            self.listener_functions[listener_key] = chains_changed_callback
+            self.listener_objects[listener_key] = device
+
+            chains_changed_callback()
+
+        def device_stop_listen_chains(params: Tuple[Any] = ()):
+            track_index, device_index = int(params[0]), int(params[1])
+            device = self.song.tracks[track_index].devices[device_index]
+
+            listener_key = ('chains', (track_index, device_index))
+            if listener_key in self.listener_functions:
+                self.logger.info("Removing chains listener for track %d, device %d" % (track_index, device_index))
+                listener_function = self.listener_functions[listener_key]
+                device.remove_chains_listener(listener_function)
+                del self.listener_functions[listener_key]
+                del self.listener_objects[listener_key]
+            else:
+                self.logger.warning("No chains listener found for track %d, device %d" % (track_index, device_index))
+
+        self.osc_server.add_handler("/live/device/start_listen/chains", device_start_listen_chains)
+        self.osc_server.add_handler("/live/device/stop_listen/chains", device_stop_listen_chains)
+
+        #--------------------------------------------------------------------------------
+        # Device-scoped: Selected chain listener
+        #--------------------------------------------------------------------------------
+        def device_start_listen_selected_chain(params: Tuple[Any] = ()):
+            track_index, device_index = int(params[0]), int(params[1])
+            device = self.song.tracks[track_index].devices[device_index]
+
+            def selected_chain_changed_callback():
+                selected = device.view.selected_chain
+                if selected is not None:
+                    chain_index = list(device.chains).index(selected)
+                else:
+                    chain_index = -1
+                self.logger.info("Selected chain changed for device %d on track %d: %d" % (device_index, track_index, chain_index))
+                self.osc_server.send("/live/device/get/selected_chain", (track_index, device_index, chain_index))
+
+            listener_key = ('selected_chain', (track_index, device_index))
+            if listener_key in self.listener_functions:
+                device_stop_listen_selected_chain(params)
+
+            self.logger.info("Adding selected_chain listener for track %d, device %d" % (track_index, device_index))
+            device.view.add_selected_chain_listener(selected_chain_changed_callback)
+            self.listener_functions[listener_key] = selected_chain_changed_callback
+            self.listener_objects[listener_key] = device.view
+
+            selected_chain_changed_callback()
+
+        def device_stop_listen_selected_chain(params: Tuple[Any] = ()):
+            track_index, device_index = int(params[0]), int(params[1])
+            device = self.song.tracks[track_index].devices[device_index]
+
+            listener_key = ('selected_chain', (track_index, device_index))
+            if listener_key in self.listener_functions:
+                self.logger.info("Removing selected_chain listener for track %d, device %d" % (track_index, device_index))
+                listener_function = self.listener_functions[listener_key]
+                device.view.remove_selected_chain_listener(listener_function)
+                del self.listener_functions[listener_key]
+                del self.listener_objects[listener_key]
+            else:
+                self.logger.warning("No selected_chain listener found for track %d, device %d" % (track_index, device_index))
+
+        self.osc_server.add_handler("/live/device/start_listen/selected_chain", device_start_listen_selected_chain)
+        self.osc_server.add_handler("/live/device/stop_listen/selected_chain", device_stop_listen_selected_chain)
+
+        #--------------------------------------------------------------------------------
+        # Chain-scoped: Individual chain properties (read-only)
+        #--------------------------------------------------------------------------------
+        properties_r = [
+            "color",
+            "color_index",
+        ]
+        properties_rw = [
+            "name",
+            "mute",
+            "solo",
+        ]
+
+        for prop in properties_r + properties_rw:
+            self.osc_server.add_handler("/live/chain/get/%s" % prop,
+                                        create_chain_callback(self._get_property, prop))
+        for prop in properties_rw:
+            self.osc_server.add_handler("/live/chain/set/%s" % prop,
+                                        create_chain_callback(self._set_property, prop))
+
+        #--------------------------------------------------------------------------------
+        # Chain-scoped: Listeners for mute/solo
+        #--------------------------------------------------------------------------------
+        for prop in properties_rw:
+            self.osc_server.add_handler("/live/chain/start_listen/%s" % prop,
+                                        create_chain_callback(self._start_listen, prop, include_ids=True))
+            self.osc_server.add_handler("/live/chain/stop_listen/%s" % prop,
+                                        create_chain_callback(self._stop_listen, prop, include_ids=True))
+
+        #--------------------------------------------------------------------------------
+        # Chain-scoped: Mixer properties (volume, panning)
+        # These are accessed via chain.mixer_device.volume / chain.mixer_device.panning
+        #--------------------------------------------------------------------------------
+        def chain_get_volume(chain, params: Tuple[Any] = ()):
+            return (chain.mixer_device.volume.value,)
+
+        def chain_set_volume(chain, params: Tuple[Any] = ()):
+            chain.mixer_device.volume.value = params[0]
+
+        def chain_get_panning(chain, params: Tuple[Any] = ()):
+            return (chain.mixer_device.panning.value,)
+
+        def chain_set_panning(chain, params: Tuple[Any] = ()):
+            chain.mixer_device.panning.value = params[0]
+
+        self.osc_server.add_handler("/live/chain/get/volume", create_chain_callback(chain_get_volume))
+        self.osc_server.add_handler("/live/chain/set/volume", create_chain_callback(chain_set_volume))
+        self.osc_server.add_handler("/live/chain/get/panning", create_chain_callback(chain_get_panning))
+        self.osc_server.add_handler("/live/chain/set/panning", create_chain_callback(chain_set_panning))
+
+        #--------------------------------------------------------------------------------
+        # Chain-scoped: Mixer property listeners (volume, panning)
+        #--------------------------------------------------------------------------------
+        def chain_start_listen_mixer(chain, prop_name, params: Tuple[Any] = ()):
+            parameter_object = getattr(chain.mixer_device, prop_name)
+
+            def property_changed_callback():
+                value = parameter_object.value
+                self.logger.info("Property %s changed of chain %s: %s" % (prop_name, str(params), value))
+                self.osc_server.send("/live/chain/get/%s" % prop_name, (*params, value))
+
+            listener_key = ('chain_mixer_%s' % prop_name, tuple(params))
+            if listener_key in self.listener_functions:
+                chain_stop_listen_mixer(chain, prop_name, params)
+
+            self.logger.info("Adding %s listener for chain %s" % (prop_name, str(params)))
+            parameter_object.add_value_listener(property_changed_callback)
+            self.listener_functions[listener_key] = property_changed_callback
+            self.listener_objects[listener_key] = parameter_object
+
+            property_changed_callback()
+
+        def chain_stop_listen_mixer(chain, prop_name, params: Tuple[Any] = ()):
+            parameter_object = getattr(chain.mixer_device, prop_name)
+
+            listener_key = ('chain_mixer_%s' % prop_name, tuple(params))
+            if listener_key in self.listener_functions:
+                self.logger.info("Removing %s listener for chain %s" % (prop_name, str(params)))
+                listener_function = self.listener_functions[listener_key]
+                parameter_object.remove_value_listener(listener_function)
+                del self.listener_functions[listener_key]
+                del self.listener_objects[listener_key]
+            else:
+                self.logger.warning("No %s listener found for chain %s" % (prop_name, str(params)))
+
+        for mixer_prop in ["volume", "panning"]:
+            self.osc_server.add_handler("/live/chain/start_listen/%s" % mixer_prop,
+                                        create_chain_callback(chain_start_listen_mixer, mixer_prop, include_ids=True))
+            self.osc_server.add_handler("/live/chain/stop_listen/%s" % mixer_prop,
+                                        create_chain_callback(chain_stop_listen_mixer, mixer_prop, include_ids=True))
+
+        #--------------------------------------------------------------------------------
+        # Chain-scoped: Devices within chain
+        #--------------------------------------------------------------------------------
+        def chain_get_num_devices(chain, params: Tuple[Any] = ()):
+            return (len(chain.devices),)
+
+        def chain_get_devices_name(chain, params: Tuple[Any] = ()):
+            return tuple(device.name for device in chain.devices)
+
+        def chain_get_devices_type(chain, params: Tuple[Any] = ()):
+            return tuple(device.type for device in chain.devices)
+
+        def chain_get_devices_class_name(chain, params: Tuple[Any] = ()):
+            return tuple(device.class_name for device in chain.devices)
+
+        self.osc_server.add_handler("/live/chain/get/num_devices", create_chain_callback(chain_get_num_devices))
+        self.osc_server.add_handler("/live/chain/get/devices/name", create_chain_callback(chain_get_devices_name))
+        self.osc_server.add_handler("/live/chain/get/devices/type", create_chain_callback(chain_get_devices_type))
+        self.osc_server.add_handler("/live/chain/get/devices/class_name", create_chain_callback(chain_get_devices_class_name))
