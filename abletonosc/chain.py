@@ -226,3 +226,14 @@ class ChainHandler(AbletonOSCHandler):
         self.osc_server.add_handler("/live/chain/get/devices/name", create_chain_callback(chain_get_devices_name))
         self.osc_server.add_handler("/live/chain/get/devices/type", create_chain_callback(chain_get_devices_type))
         self.osc_server.add_handler("/live/chain/get/devices/class_name", create_chain_callback(chain_get_devices_class_name))
+
+        #--------------------------------------------------------------------------------
+        # Chain-scoped: Bulk enable/disable all devices in a chain
+        # Sets parameter 0 ("Device On") for every device in the chain.
+        #--------------------------------------------------------------------------------
+        def chain_set_devices_enabled(chain, params: Tuple[Any] = ()):
+            enabled = float(params[0])
+            for device in chain.devices:
+                device.parameters[0].value = enabled
+
+        self.osc_server.add_handler("/live/chain/set/devices_enabled", create_chain_callback(chain_set_devices_enabled))
